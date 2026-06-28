@@ -1,98 +1,158 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Web3 Relayer MVP
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+A high-performance, resilient, and production-ready **Web3 Transaction Relayer** built with **NestJS**. This system acts as a relayer that receives transaction requests from clients, verifies cryptographic signatures, persists state, queues transactions for safe asynchronous broadcasting using BullMQ, and tracks blockchain confirmation status.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+---
 
-## Description
+## 🏗️ Architecture Flow
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
-
-## Project setup
-
-```bash
-$ npm install
+```mermaid
+graph TD
+    Client[Client / DApp] -->|POST /wallet/execute| API[REST API: WalletController]
+    
+    subgraph NestJS Core Services
+        API -->|1. Verify EIP-191 Signature| Sig[Signature Verification]
+        API -->|2. Persist tracking record| DB[(PostgreSQL Database)]
+        API -->|3. Push execute-tx job| Queue[BullMQ / Redis Queue]
+        
+        Queue -.->|4. Pick up job| Worker[Transaction Processor]
+        Worker -->|5. Gas Estimation & Tx Simulation| ProviderService[RPC Provider Service]
+        Worker -->|6. Sign & Broadcast Tx| ProviderService
+        Worker -->|7. Save Tx Hash| DB
+        
+        Listener[Blockchain Listener Service] -->|8. Poll Block Number & Receipts| ProviderService
+        Listener -->|9. Update status to MINED/FAILED| DB
+    end
+    
+    ProviderService -->|Failover / Multi-RPC| RPCs{JSON-RPC Endpoint Group}
+    RPCs -->|Primary RPC| Node1[Ethereum Node A]
+    RPCs -->|Fallback RPC| Node2[Ethereum Node B]
 ```
 
-## Compile and run the project
+---
+
+## ⚡ Key Features
+
+- **🔐 Cryptographic Signature Verification**: Protects endpoints by verifying that the signature matches the declared sender address (`ethers.verifyMessage`) using EIP-191 compatible string formats (`sender:target:data`).
+- **🗃️ Robust Queuing System (BullMQ)**: Prevents transaction overlapping, handles network latency, and ensures high availability via Redis-backed queuing.
+- **🔌 Multi-RPC Failover & Auto-Retry**: Built with RxJS streams. If the active JSON-RPC node fails, the service automatically rotates to fallback endpoints and retries the operation seamlessly.
+- **⛽ Smart Gas Estimation**: Simulates transactions via `estimateGas` prior to broadcasting, preventing gas waste on invalid executions.
+- **📡 Blockchain Confirmation Sync**: An internal block listener processes transactions, monitoring them until they are finalized on-chain and updating the database records to `MINED` or `FAILED`.
+- **🧪 Modern Testing Suite**: Integrates **Testcontainers** for fully dockerized, isolated E2E tests running real Postgres and Redis instances.
+
+---
+
+## ⚙️ Project Configuration
+
+Before starting, copy `.env.example` to `.env` and fill in your values:
 
 ```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+cp .env.example .env
 ```
 
-## Run tests
+| Environment Variable | Description | Default |
+|---|---|---|
+| `NODE_ENV` | Application environment (`development`, `production`, `test`) | `development` |
+| `PORT` | HTTP Server port | `3000` |
+| `DB_HOST` | PostgreSQL Hostname | `localhost` |
+| `DB_PORT` | PostgreSQL Port | `5432` |
+| `DB_USERNAME` | PostgreSQL Username | - |
+| `DB_PASSWORD` | PostgreSQL Password | - |
+| `DB_NAME` | PostgreSQL Database name | - |
+| `RELAYER_PRIVATE_KEY` | Hex private key of the Ethereum wallet funding transaction gas | - |
+| `RPC_URLS` | Comma-separated list of JSON-RPC endpoint URLs for failover | - |
+| `REDIS_HOST` | Redis Server Hostname | `localhost` |
+| `REDIS_PORT` | Redis Server Port | `6379` |
+
+---
+
+## 🚀 Getting Started
+
+### Prerequisites
+
+- [Node.js](https://nodejs.org/) (v18 or higher recommended)
+- [npm](https://www.npmjs.com/)
+- [Docker](https://www.docker.com/) (Required for running integration tests via Testcontainers)
+- A running instance of PostgreSQL and Redis (for local development)
+
+### Installation
 
 ```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+# Clone the repository and install dependencies
+npm install
 ```
 
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+### Running the App
 
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+# Development (watch mode)
+npm run start:dev
+
+# Production build & run
+npm run build
+npm run start:prod
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+---
 
-## Resources
+## 📡 API Reference
 
-Check out a few resources that may come in handy when working with NestJS:
+### Relayer Transaction Execution
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+Triggers transaction broadcasting. The message payload must be signed using the user's private key.
 
-## Support
+- **URL**: `/wallet/execute`
+- **Method**: `POST`
+- **Headers**: `Content-Type: application/json`
+- **HTTP Response Code**: `202 Accepted`
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+#### Request Body
+```json
+{
+  "sender": "0x90F8bf3254111440d99520C407556130C4e2ac50",
+  "target": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+  "data": "0xa9059cbb00000000000000000000000090f8bf3254111440d99520c407556130c4e2ac500000000000000000000000000000000000000000000000000000000000000064",
+  "signature": "0x..."
+}
+```
 
-## Stay in touch
+#### Message Format for Signing
+The signature must be generated by hashing the colon-concatenated string of `sender`, `target`, and `data` in the following format:
+```text
+sender:target:data
+```
+For example, sign the string:
+`0x90F8bf3254111440d99520C407556130C4e2ac50:0x5FbDB2315678afecb367f032d93F642f64180aa3:0xa9059cbb00000000000000000000000090f8bf3254111440d99520c407556130c4e2ac500000000000000000000000000000000000000000000000000000000000000064`
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+#### Response Body
+```json
+{
+  "trackingId": "b6a7a08b-59d4-406a-a249-f538e12a43fe",
+  "status": "PENDING"
+}
+```
 
-## License
+---
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+## 🧪 Testing
+
+The repository contains isolated unit tests as well as E2E/integration tests.
+
+```bash
+# Run unit tests
+npm run test
+
+# Run E2E tests (Uses Testcontainers to spin up Postgres and Redis)
+npm run test:e2e
+
+# Run test coverage
+npm run test:cov
+```
+
+*Note: Make sure Docker is running on your machine before triggering `npm run test:e2e`.*
+
+---
+
+## 📄 License
+
+This project is unlicensed / proprietary.
